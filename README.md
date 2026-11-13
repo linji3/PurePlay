@@ -8,9 +8,9 @@ An ultra-minimalist, ad-free, zero-network-permission Android local video player
 
 ## Download / 下载安装
 
-Go to [Releases](../../releases) to download the latest `PurePlay-v1.0.0.apk` (Android 8.0+).
+Go to [Releases](../../releases) to download the latest `PurePlay-v1.1.0.apk` (Android 8.0+).
 
-前往 [Releases](../../releases) 页面下载最新版 `PurePlay-v1.0.0.apk`（支持 Android 8.0 及以上系统）。
+前往 [Releases](../../releases) 页面下载最新版 `PurePlay-v1.1.0.apk`（支持 Android 8.0 及以上系统）。
 
 ---
 
@@ -20,9 +20,13 @@ Go to [Releases](../../releases) to download the latest `PurePlay-v1.0.0.apk` (A
   No `INTERNET` permission in `AndroidManifest.xml` — 100% offline, no ads, no tracking, no background bloat.
   `AndroidManifest.xml` 中未申请任何网络权限，纯本地离线运行，无广告、无推送、无后台唤醒。
 
-- **Broad Format Support / 主流视频格式支持**
-  Powered by Media3 (ExoPlayer) with hardware/software decoder fallback, supporting MP4, MKV, WebM, MOV, FLV, TS, AVI, and more.
-  基于 Media3 (ExoPlayer) 并启用硬/软解回退，支持 MP4、MKV、WebM、MOV、FLV、TS、AVI 等主流视频格式。
+- **Broad Format Support / 主流音视频格式支持**
+  Powered by Media3 (ExoPlayer) with hardware/software decoder fallback, supporting MP4, MKV, WebM, MOV, FLV, TS, AVI, as well as MP3, FLAC, AAC, WAV, OGG, M4A, Opus, and more.
+  基于 Media3 (ExoPlayer) 并启用硬/软解回退，支持 MP4、MKV、WebM、MOV、FLV、TS、AVI 等主流视频格式，以及 MP3、FLAC、AAC、WAV、OGG、M4A、Opus 等主流音频格式。
+
+- **Background Audio & Custom Playlists / 后台听歌与自定义歌单**
+  Built with `MediaSessionService` for background playback, lock-screen/notification controls, and Bluetooth headset support. Create custom playlists, add your favorite tracks, and switch between sequential, repeat-one, and shuffle modes.
+  基于 `MediaSessionService` 支持后台持续播放、锁屏与通知栏播控及蓝牙耳机控制；支持自由新建歌单、添加喜欢的音乐，并切换顺序 / 单曲 / 随机播放模式。
 
 - **Butter-Smooth Pinch-to-Zoom & Pan / 丝滑双指缩放与拖动**
   Rendered on `TextureView` for 60/120fps fluid `0.75x ~ 6.0x` pinch-to-zoom around the focal point, single/two-finger pan, elastic snap-back below `1.0x`, and one-tap reset.
