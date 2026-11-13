@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle outer lens / zoom ring -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,25 A29,29 0 1,1 53.99,25 Z"
+        android:strokeWidth="1.6">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="80"
+                android:endY="80"
+                android:startX="28"
+                android:startY="28"
+                android:type="linear">
+                <item
+                    android:color="#6638BDF8"
+                    android:offset="0.0" />
+                <item
+                    android:color="#33818CF8"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Minimalist corner zoom brackets (top-left & bottom-right) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M31,41 L31,34 C31,32.3 32.3,31 34,31 L41,31"
+        android:strokeColor="#80E0F2FE"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M77,67 L77,74 C77,75.7 75.7,77 74,77 L67,77"
+        android:strokeColor="#80818CF8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+
+    <!-- Soft shadow behind play prism -->
+    <path
+        android:fillColor="#40000000"
+        android:pathData="M45.5,39.5 C45.5,37.8 47.4,36.8 48.9,37.7 L71.2,51.2 C72.7,52.1 72.7,54.3 71.2,55.2 L48.9,68.7 C47.4,69.6 45.5,68.6 45.5,66.9 Z" />
+
+    <!-- Rounded-corner gradient play prism -->
+    <path android:pathData="M44.5,38.8 C44.5,37.1 46.4,36.1 47.9,37.0 L70.2,50.5 C71.7,51.4 71.7,53.6 70.2,54.5 L47.9,68.0 C46.4,68.9 44.5,67.9 44.5,66.2 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="71"
+                android:endY="68"
+                android:startX="44"
+                android:startY="37"
+                android:type="linear">
+                <item
+                    android:color="#FF7DD3FC"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF38BDF8"
+                    android:offset="0.45" />
+                <item
+                    android:color="#FF6366F1"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

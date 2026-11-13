@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">PurePlay</string>
+    <string name="pick_video">选择视频播放</string>
+    <string name="pick_video_hint">支持 MP4、MKV、AVI、MOV、WebM、FLV 等主流格式</string>
+    <string name="recent_videos">最近播放</string>
+    <string name="local_videos">本地视频</string>
+    <string name="grant_permission">授权访问本地视频</string>
+    <string name="no_videos">暂无视频，点击上方按钮选择文件</string>
+    <string name="reset_zoom">重置缩放</string>
+    <string name="speed_2x_hint">2.0x 倍速播放中</string>
+    <string name="locked_hint">屏幕已锁定</string>
+    <string name="unlocked_hint">屏幕已解锁</string>
+</resources>

@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_black"
+    android:keepScreenOn="true">
+
+    <!-- TextureView-backed PlayerView for 60/120fps butter-smooth pinch-to-zoom & pan -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:resize_mode="fit"
+        app:show_buffering="when_playing"
+        app:surface_type="texture_view"
+        app:use_controller="false" />
+
+    <!-- Gesture Capture Layer -->
+    <View
+        android:id="@+id/gestureLayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Left/Right Double-Tap Seek Feedback -->
+    <TextView
+        android:id="@+id/tvDoubleTapLeft"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="48dp"
+        android:background="@drawable/bg_pill"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="10dp"
+        android:text="-10s"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvDoubleTapRight"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="48dp"
+        android:background="@drawable/bg_pill"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="10dp"
+        android:text="+10s"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- Center Gesture HUD (Seek / Zoom / Volume / Brightness / 2x Speed) -->
+    <TextView
+        android:id="@+id/tvCenterHud"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_pill"
+        android:gravity="center"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="10dp"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- Top-center 2x Speed Pill -->
+    <TextView
+        android:id="@+id/tvSpeedBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="28dp"
+        android:background="@drawable/bg_pill"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="6dp"
+        android:text="@string/speed_2x_hint"
+        android:textColor="@color/accent"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- Controls Overlay -->
+    <FrameLayout
+        android:id="@+id/controlsOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#44000000">
+
+        <!-- Top Bar -->
+        <LinearLayout
+            android:id="@+id/topBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:background="#88000000"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="返回"
+                android:src="@drawable/ic_back" />
+
+            <TextView
+                android:id="@+id/tvVideoTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnResetZoom"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_pill"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:text="@string/reset_zoom"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/btnRotate"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="旋转屏幕"
+                android:src="@drawable/ic_rotate" />
+        </LinearLayout>
+
+        <!-- Center Playback Controls -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btnRewind"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:background="@drawable/bg_circle_btn"
+                android:contentDescription="倒退10秒"
+                android:padding="14dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_rewind_10" />
+
+            <ImageButton
+                android:id="@+id/btnPlayPause"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_marginHorizontal="28dp"
+                android:background="@drawable/bg_circle_btn"
+                android:contentDescription="播放/暂停"
+                android:padding="18dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause" />
+
+            <ImageButton
+                android:id="@+id/btnForward"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:background="@drawable/bg_circle_btn"
+                android:contentDescription="快进10秒"
+                android:padding="14dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_forward_10" />
+        </LinearLayout>
+
+        <!-- Bottom Bar -->
+        <LinearLayout
+            android:id="@+id/bottomBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="#88000000"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvCurrentTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="00:00"
+                    android:textColor="@color/text_primary"
+                    android:textSize="12sp" />
+
+                <SeekBar
+                    android:id="@+id/seekBar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="8dp"
+                    android:layout_weight="1"
+                    android:max="1000"
+                    android:progressTint="@color/accent"
+                    android:thumbTint="@color/accent" />
+
+                <TextView
+                    android:id="@+id/tvTotalTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="00:00"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btnLock"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="锁屏"
+                    android:src="@drawable/ic_unlock" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/btnSpeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="10dp"
+                    android:background="@drawable/bg_pill"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:text="1.0x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/btnAspect"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:background="@drawable/bg_pill"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:text="适应"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Unlock button shown when screen is locked -->
+    <ImageButton
+        android:id="@+id/btnUnlockFloating"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="20dp"
+        android:background="@drawable/bg_circle_btn"
+        android:contentDescription="解锁屏幕"
+        android:padding="12dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_lock"
+        android:visibility="gone" />
+
+</FrameLayout>

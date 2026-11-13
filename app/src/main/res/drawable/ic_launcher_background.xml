@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Deep obsidian-slate base gradient -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="108"
+                android:endY="108"
+                android:startX="0"
+                android:startY="0"
+                android:type="linear">
+                <item
+                    android:color="#FF0F172A"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF070B14"
+                    android:offset="0.55" />
+                <item
+                    android:color="#FF020409"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Subtle top-left ambient glow -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="36"
+                android:centerY="34"
+                android:gradientRadius="64"
+                android:type="radial">
+                <item
+                    android:color="#2E38BDF8"
+                    android:offset="0.0" />
+                <item
+                    android:color="#0038BDF8"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>
