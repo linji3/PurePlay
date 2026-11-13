@@ -3,6 +3,7 @@ package com.pureplay.video
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -13,6 +14,10 @@ import com.google.common.util.concurrent.ListenableFuture
 
 object AudioPlaybackHelper {
 
+    const val EXTRA_FOLDER_URI = "extra_folder_uri"
+    const val EXTRA_FOLDER_NAME = "extra_folder_name"
+    const val EXTRA_DISPLAY_NAME = "extra_display_name"
+
     fun buildControllerFuture(context: Context): ListenableFuture<MediaController> {
         val token = SessionToken(
             context.applicationContext,
@@ -22,9 +27,15 @@ object AudioPlaybackHelper {
     }
 
     fun toMediaItem(track: AudioTrack): MediaItem {
+        val extras = Bundle().apply {
+            if (track.folderUri.isNotEmpty()) putString(EXTRA_FOLDER_URI, track.folderUri)
+            if (track.folderName.isNotEmpty()) putString(EXTRA_FOLDER_NAME, track.folderName)
+            if (track.displayName.isNotEmpty()) putString(EXTRA_DISPLAY_NAME, track.displayName)
+        }
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist.ifEmpty { "PurePlay" })
+            .setExtras(extras)
             .build()
         return MediaItem.Builder()
             .setMediaId(track.uri)

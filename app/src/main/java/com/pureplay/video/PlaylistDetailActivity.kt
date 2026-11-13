@@ -2,6 +2,7 @@ package com.pureplay.video
 
 import android.content.ContentUris
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.view.LayoutInflater
@@ -16,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.pureplay.video.databinding.ActivityPlaylistDetailBinding
+import java.io.File
 
 class PlaylistDetailActivity : AppCompatActivity() {
 
@@ -23,16 +25,42 @@ class PlaylistDetailActivity : AppCompatActivity() {
         const val EXTRA_PLAYLIST_ID = "extra_playlist_id"
     }
 
+    private sealed class PlaylistRow {
+        data class FolderHeader(val folderName: String, val count: Int, val firstIndex: Int) : PlaylistRow()
+        data class TrackItem(val track: AudioTrack, val playIndex: Int) : PlaylistRow()
+    }
+
     private lateinit var binding: ActivityPlaylistDetailBinding
     private var playlistId: String = ""
     private val tracks = mutableListOf<AudioTrack>()
+    private val rows = mutableListOf<PlaylistRow>()
     private lateinit var adapter: TrackAdapter
+
+    private val pickFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri == null) return@registerForActivityResult
+        Toast.makeText(this, "正在扫描文件夹音频...", Toast.LENGTH_SHORT).show()
+        Thread {
+            val scanned = FolderAudioScanner.scanAudioFiles(this, treeUri)
+            val addedCount = PlaylistRepository.addTracks(this, playlistId, scanned)
+            runOnUiThread {
+                reloadPlaylist()
+                val msg = when {
+                    scanned.isEmpty() -> "该文件夹内未找到音频文件"
+                    addedCount == 0 -> "文件夹中的歌曲均已在歌单中"
+                    else -> "已从文件夹添加 $addedCount 首歌曲"
+                }
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
 
     private val pickAudioFilesLauncher = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
-        var addedCount = 0
+        val picked = mutableListOf<AudioTrack>()
         for (uri in uris) {
             try {
                 contentResolver.takePersistableUriPermission(
@@ -41,11 +69,11 @@ class PlaylistDetailActivity : AppCompatActivity() {
                 )
             } catch (_: Exception) {
             }
-            val title = FormatUtils.resolveDisplayName(this, uri)
-            if (PlaylistRepository.addTrack(this, playlistId, AudioTrack(uri.toString(), title))) {
-                addedCount++
-            }
+            val displayName = FormatUtils.resolveDisplayName(this, uri)
+            val title = displayName.substringBeforeLast('.').ifEmpty { displayName }
+            picked.add(AudioTrack(uri = uri.toString(), title = title, displayName = displayName))
         }
+        val addedCount = PlaylistRepository.addTracks(this, playlistId, picked)
         reloadPlaylist()
         Toast.makeText(this, "已添加 $addedCount 首歌曲", Toast.LENGTH_SHORT).show()
     }
@@ -63,7 +91,7 @@ class PlaylistDetailActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
 
         adapter = TrackAdapter(
-            tracks = tracks,
+            rows = rows,
             onPlay = { index ->
                 AudioPlaybackHelper.playTracks(this, tracks, index) {
                     startActivity(Intent(this, AudioPlayerActivity::class.java))
@@ -95,14 +123,18 @@ class PlaylistDetailActivity : AppCompatActivity() {
     }
 
     private fun showAddSourceMenu() {
-        val options = arrayOf("从本地扫描音乐中选择", "从文件管理器选择音频文件")
+        val options = arrayOf(
+            "选择文件夹批量添加（推荐，支持同文件夹歌词）",
+            "从本地扫描音乐中选择",
+            "从文件管理器选择音频文件"
+        )
         MaterialAlertDialogBuilder(this)
             .setTitle("添加音乐到歌单")
             .setItems(options) { _, which ->
-                if (which == 0) {
-                    pickFromMediaStore()
-                } else {
-                    pickAudioFilesLauncher.launch(arrayOf("audio/*"))
+                when (which) {
+                    0 -> pickFolderLauncher.launch(null)
+                    1 -> pickFromMediaStore()
+                    else -> pickAudioFilesLauncher.launch(arrayOf("audio/*"))
                 }
             }
             .show()
@@ -111,17 +143,22 @@ class PlaylistDetailActivity : AppCompatActivity() {
     private fun pickFromMediaStore() {
         Thread {
             val localTracks = mutableListOf<AudioTrack>()
-            val projection = arrayOf(
+            val projection = mutableListOf(
                 MediaStore.Audio.Media._ID,
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.DURATION
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATA
             )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                projection.add(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME)
+            }
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
             try {
                 contentResolver.query(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    projection,
+                    projection.toTypedArray(),
                     selection,
                     null,
                     "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
@@ -130,16 +167,37 @@ class PlaylistDetailActivity : AppCompatActivity() {
                     val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                     val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                     val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                    val nameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    val bucketCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        cursor.getColumnIndex(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME)
+                    } else -1
                     while (cursor.moveToNext()) {
                         val id = cursor.getLong(idCol)
                         val title = cursor.getString(titleCol) ?: "未知歌曲"
                         val artist = cursor.getString(artistCol) ?: ""
                         val dur = cursor.getLong(durCol)
+                        val displayName = if (nameCol >= 0) cursor.getString(nameCol) ?: "" else ""
+                        val dataPath = if (dataCol >= 0) cursor.getString(dataCol) else null
+                        val folderName = when {
+                            bucketCol >= 0 -> cursor.getString(bucketCol).orEmpty()
+                            !dataPath.isNullOrEmpty() -> File(dataPath).parentFile?.name.orEmpty()
+                            else -> ""
+                        }
                         val uri = ContentUris.withAppendedId(
                             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                             id
                         )
-                        localTracks.add(AudioTrack(uri.toString(), title, artist, dur))
+                        localTracks.add(
+                            AudioTrack(
+                                uri = uri.toString(),
+                                title = title,
+                                artist = artist,
+                                durationMs = dur,
+                                folderName = folderName,
+                                displayName = displayName
+                            )
+                        )
                     }
                 }
             } catch (_: Exception) {
@@ -160,14 +218,8 @@ class PlaylistDetailActivity : AppCompatActivity() {
                         checked[which] = isChecked
                     }
                     .setPositiveButton("添加") { _, _ ->
-                        var count = 0
-                        for (i in localTracks.indices) {
-                            if (checked[i]) {
-                                if (PlaylistRepository.addTrack(this, playlistId, localTracks[i])) {
-                                    count++
-                                }
-                            }
-                        }
+                        val selected = localTracks.filterIndexed { i, _ -> checked[i] }
+                        val count = PlaylistRepository.addTracks(this, playlistId, selected)
                         reloadPlaylist()
                         Toast.makeText(this, "已添加 $count 首歌曲", Toast.LENGTH_SHORT).show()
                     }
@@ -184,41 +236,89 @@ class PlaylistDetailActivity : AppCompatActivity() {
         }
         binding.tvPlaylistName.text = playlist.name
         binding.tvTrackCount.text = "${playlist.tracks.size} 首"
+
         tracks.clear()
-        tracks.addAll(playlist.tracks)
+        rows.clear()
+
+        val grouped = linkedMapOf<String, MutableList<AudioTrack>>()
+        for (t in playlist.tracks) {
+            val key = t.folderName.ifEmpty { "单曲 / 未分组" }
+            grouped.getOrPut(key) { mutableListOf() }.add(t)
+        }
+
+        for ((folder, groupTracks) in grouped) {
+            val firstIdx = tracks.size
+            rows.add(PlaylistRow.FolderHeader(folder, groupTracks.size, firstIdx))
+            for (t in groupTracks) {
+                rows.add(PlaylistRow.TrackItem(t, tracks.size))
+                tracks.add(t)
+            }
+        }
+
         adapter.notifyDataSetChanged()
         binding.tvEmpty.visibility = if (tracks.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private class TrackAdapter(
-        private val tracks: List<AudioTrack>,
+        private val rows: List<PlaylistRow>,
         private val onPlay: (Int) -> Unit,
         private val onRemove: (AudioTrack) -> Unit
-    ) : RecyclerView.Adapter<TrackAdapter.VH>() {
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
-        class VH(view: View) : RecyclerView.ViewHolder(view) {
+        companion object {
+            private const val TYPE_HEADER = 0
+            private const val TYPE_TRACK = 1
+        }
+
+        class HeaderVH(view: View) : RecyclerView.ViewHolder(view) {
+            val tvFolderName: TextView = view.findViewById(R.id.tvFolderName)
+            val tvFolderCount: TextView = view.findViewById(R.id.tvFolderCount)
+        }
+
+        class TrackVH(view: View) : RecyclerView.ViewHolder(view) {
             val tvTitle: TextView = view.findViewById(R.id.tvTitle)
             val tvMeta: TextView = view.findViewById(R.id.tvMeta)
             val btnAction: ImageButton = view.findViewById(R.id.btnAction)
         }
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val v = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_audio, parent, false)
-            return VH(v)
+        override fun getItemViewType(position: Int): Int {
+            return when (rows[position]) {
+                is PlaylistRow.FolderHeader -> TYPE_HEADER
+                is PlaylistRow.TrackItem -> TYPE_TRACK
+            }
         }
 
-        override fun onBindViewHolder(holder: VH, position: Int) {
-            val item = tracks[position]
-            holder.tvTitle.text = item.title
-            val artist = if (item.artist.isNotEmpty() && item.artist != "<unknown>") item.artist else "本地音频"
-            val dur = if (item.durationMs > 0) "  ·  ${FormatUtils.formatDuration(item.durationMs)}" else ""
-            holder.tvMeta.text = "$artist$dur"
-            holder.btnAction.setImageResource(R.drawable.ic_delete)
-            holder.itemView.setOnClickListener { onPlay(position) }
-            holder.btnAction.setOnClickListener { onRemove(item) }
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            val inflater = LayoutInflater.from(parent.context)
+            return if (viewType == TYPE_HEADER) {
+                HeaderVH(inflater.inflate(R.layout.item_folder_header, parent, false))
+            } else {
+                TrackVH(inflater.inflate(R.layout.item_audio, parent, false))
+            }
         }
 
-        override fun getItemCount(): Int = tracks.size
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            when (val row = rows[position]) {
+                is PlaylistRow.FolderHeader -> {
+                    val h = holder as HeaderVH
+                    h.tvFolderName.text = row.folderName
+                    h.tvFolderCount.text = "${row.count} 首"
+                    h.itemView.setOnClickListener { onPlay(row.firstIndex) }
+                }
+                is PlaylistRow.TrackItem -> {
+                    val h = holder as TrackVH
+                    val item = row.track
+                    h.tvTitle.text = item.title
+                    val artist = if (item.artist.isNotEmpty() && item.artist != "<unknown>") item.artist else "本地音频"
+                    val dur = if (item.durationMs > 0) "  ·  ${FormatUtils.formatDuration(item.durationMs)}" else ""
+                    h.tvMeta.text = "$artist$dur"
+                    h.btnAction.setImageResource(R.drawable.ic_delete)
+                    h.itemView.setOnClickListener { onPlay(row.playIndex) }
+                    h.btnAction.setOnClickListener { onRemove(item) }
+                }
+            }
+        }
+
+        override fun getItemCount(): Int = rows.size
     }
 }

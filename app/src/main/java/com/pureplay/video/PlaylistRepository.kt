@@ -9,7 +9,10 @@ data class AudioTrack(
     val uri: String,
     val title: String,
     val artist: String = "",
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val folderName: String = "",
+    val folderUri: String = "",
+    val displayName: String = ""
 )
 
 data class UserPlaylist(
@@ -42,7 +45,10 @@ object PlaylistRepository {
                             uri = t.getString("uri"),
                             title = t.getString("title"),
                             artist = t.optString("artist", ""),
-                            durationMs = t.optLong("durationMs", 0L)
+                            durationMs = t.optLong("durationMs", 0L),
+                            folderName = t.optString("folderName", ""),
+                            folderUri = t.optString("folderUri", ""),
+                            displayName = t.optString("displayName", "")
                         )
                     )
                 }
@@ -88,14 +94,25 @@ object PlaylistRepository {
     }
 
     fun addTrack(context: Context, playlistId: String, track: AudioTrack): Boolean {
+        return addTracks(context, playlistId, listOf(track)) > 0
+    }
+
+    fun addTracks(context: Context, playlistId: String, newTracks: List<AudioTrack>): Int {
+        if (newTracks.isEmpty()) return 0
         val all = getAllPlaylists(context)
-        val playlist = all.firstOrNull { it.id == playlistId } ?: return false
-        if (playlist.tracks.any { it.uri == track.uri }) {
-            return false
+        val playlist = all.firstOrNull { it.id == playlistId } ?: return 0
+        val existingUris = playlist.tracks.map { it.uri }.toHashSet()
+        var added = 0
+        for (track in newTracks) {
+            if (existingUris.add(track.uri)) {
+                playlist.tracks.add(track)
+                added++
+            }
         }
-        playlist.tracks.add(track)
-        saveAll(context, all)
-        return true
+        if (added > 0) {
+            saveAll(context, all)
+        }
+        return added
     }
 
     fun removeTrack(context: Context, playlistId: String, uri: String) {
@@ -119,6 +136,9 @@ object PlaylistRepository {
                 tObj.put("title", t.title)
                 tObj.put("artist", t.artist)
                 tObj.put("durationMs", t.durationMs)
+                if (t.folderName.isNotEmpty()) tObj.put("folderName", t.folderName)
+                if (t.folderUri.isNotEmpty()) tObj.put("folderUri", t.folderUri)
+                if (t.displayName.isNotEmpty()) tObj.put("displayName", t.displayName)
                 tracksArr.put(tObj)
             }
             obj.put("tracks", tracksArr)
