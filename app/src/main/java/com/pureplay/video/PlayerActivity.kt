@@ -15,6 +15,8 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
+import android.view.ViewParent
 import android.view.animation.DecelerateInterpolator
 import android.widget.SeekBar
 import android.widget.Toast
@@ -28,10 +30,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.pureplay.video.databinding.ActivityPlayerBinding
 import kotlin.math.abs
-import kotlin.math.max
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -39,6 +41,8 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_TITLE = "extra_title"
         private const val PREFS_POSITIONS = "playback_positions"
         private const val SEEK_STEP_MS = 10_000L
+        private const val SEEKBAR_MAX = 10_000L
+        private const val SCRUB_WATCHDOG_MS = 90L
         private const val AUTO_HIDE_DELAY_MS = 3_500L
         private const val MIN_SCALE = 0.75f
         private const val MAX_SCALE = 6.0f
@@ -52,6 +56,10 @@ class PlayerActivity : AppCompatActivity() {
     private var controlsVisible = true
     private var isLocked = false
     private var isUserSeeking = false
+    private var wasPlayingBeforeSeek = false
+    private var isSeekInFlight = false
+    private var pendingScrubMs = -1L
+    private var lastDispatchedScrubMs = -1L
     private var isLongPressSpeed = false
     private var normalSpeed = 1.0f
     private val speedOptions = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
@@ -106,6 +114,14 @@ class PlayerActivity : AppCompatActivity() {
     private val hideDoubleTapLeftRunnable = Runnable { binding.tvDoubleTapLeft.visibility = View.GONE }
     private val hideDoubleTapRightRunnable = Runnable { binding.tvDoubleTapRight.visibility = View.GONE }
     private val hideUnlockRunnable = Runnable { binding.btnUnlockFloating.visibility = View.GONE }
+    private val scrubTimeoutRunnable = Runnable {
+        isSeekInFlight = false
+        if ((isUserSeeking || swipeMode == SwipeMode.SEEK) &&
+            pendingScrubMs >= 0L && pendingScrubMs != lastDispatchedScrubMs
+        ) {
+            dispatchScrubSeek(pendingScrubMs)
+        }
+    }
 
     private val progressRunnable = object : Runnable {
         override fun run() {
@@ -126,6 +142,13 @@ class PlayerActivity : AppCompatActivity() {
 
         setupControls()
         setupGestures()
+        binding.playerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val target = getVideoSurface() ?: return@addOnLayoutChangeListener
+            ensureUnclipped(target)
+            clampTranslation(target)
+            applyTransform(target)
+            updateResetZoomButton()
+        }
         handleIntent(intent)
     }
 
@@ -164,6 +187,7 @@ class PlayerActivity : AppCompatActivity() {
             .setEnableDecoderFallback(true)
 
         val exoPlayer = ExoPlayer.Builder(this, renderersFactory).build()
+        exoPlayer.setSeekParameters(SeekParameters.EXACT)
         player = exoPlayer
         binding.playerView.player = exoPlayer
 
@@ -178,7 +202,9 @@ class PlayerActivity : AppCompatActivity() {
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                updatePlayPauseIcon(isPlaying)
+                if (!isUserSeeking && swipeMode != SwipeMode.SEEK) {
+                    updatePlayPauseIcon(isPlaying)
+                }
                 if (isPlaying) {
                     scheduleAutoHide()
                 } else {
@@ -187,6 +213,15 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && isSeekInFlight) {
+                    isSeekInFlight = false
+                    handler.removeCallbacks(scrubTimeoutRunnable)
+                    if ((isUserSeeking || swipeMode == SwipeMode.SEEK) &&
+                        pendingScrubMs >= 0L && pendingScrubMs != lastDispatchedScrubMs
+                    ) {
+                        dispatchScrubSeek(pendingScrubMs)
+                    }
+                }
                 if (playbackState == Player.STATE_ENDED) {
                     showControls()
                     savePosition(uri, 0L)
@@ -285,21 +320,34 @@ class PlayerActivity : AppCompatActivity() {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     val dur = player?.duration?.coerceAtLeast(1L) ?: 1L
-                    val target = (dur * progress) / 1000L
+                    val target = (dur * progress.toLong()) / SEEKBAR_MAX
                     binding.tvCurrentTime.text = FormatUtils.formatDuration(target)
+                    showCenterHud(
+                        "${FormatUtils.formatDurationWithMs(target)} / ${FormatUtils.formatDuration(dur)}"
+                    )
+                    requestScrubSeek(target)
                 }
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) {
                 isUserSeeking = true
+                wasPlayingBeforeSeek = player?.isPlaying == true
+                if (wasPlayingBeforeSeek) {
+                    player?.pause()
+                }
                 handler.removeCallbacks(hideControlsRunnable)
             }
 
             override fun onStopTrackingTouch(sb: SeekBar?) {
-                isUserSeeking = false
                 val dur = player?.duration?.coerceAtLeast(0L) ?: 0L
-                val target = (dur * (sb?.progress ?: 0)) / 1000L
-                player?.seekTo(target)
+                val target = (dur * (sb?.progress ?: 0).toLong()) / SEEKBAR_MAX
+                finishScrubSeek(target)
+                isUserSeeking = false
+                if (wasPlayingBeforeSeek) {
+                    wasPlayingBeforeSeek = false
+                    player?.play()
+                }
+                updatePlayPauseIcon(player?.isPlaying == true)
                 scheduleAutoHide()
             }
         })
@@ -322,29 +370,35 @@ class PlayerActivity : AppCompatActivity() {
                 val newScale = (oldScale * detector.scaleFactor).coerceIn(MIN_SCALE, MAX_SCALE)
                 val factor = newScale / oldScale
 
-                val cx = target.width / 2f
-                val cy = target.height / 2f
+                val cx = binding.playerView.width / 2f
+                val cy = binding.playerView.height / 2f
                 val fx = detector.focusX
                 val fy = detector.focusY
 
                 // Keep focal point stationary while zooming + follow two-finger pan
-                transX = (transX - (fx - cx)) * factor + (fx - cx) + (fx - lastFocusX)
-                transY = (transY - (fy - cy)) * factor + (fy - cy) + (fy - lastFocusY)
+                transX = (transX - (lastFocusX - cx)) * factor + (fx - cx)
+                transY = (transY - (lastFocusY - cy)) * factor + (fy - cy)
                 lastFocusX = fx
                 lastFocusY = fy
 
                 scaleFactor = newScale
+                ensureUnclipped(target)
                 clampTranslation(target)
                 applyTransform(target)
 
-                showCenterHud(String.format("%.1fx", scaleFactor))
-                binding.btnResetZoom.visibility = if (scaleFactor > 1.02f) View.VISIBLE else View.GONE
+                val hudText = if (scaleFactor > 1.05f) {
+                    String.format("%.1fx · 单指可移动画面", scaleFactor)
+                } else {
+                    String.format("%.1fx", scaleFactor)
+                }
+                showCenterHud(hudText)
+                updateResetZoomButton()
                 return true
             }
 
             override fun onScaleEnd(detector: ScaleGestureDetector) {
                 isScaling = false
-                if (scaleFactor < 1.0f) {
+                if (scaleFactor < 1.03f) {
                     resetZoom(animated = true)
                 }
             }
@@ -444,7 +498,8 @@ class PlayerActivity : AppCompatActivity() {
                     val dy = event.y - downY
 
                     if (swipeMode == SwipeMode.NONE) {
-                        if (scaleFactor > 1.02f && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        val target = getVideoSurface()
+                        if (target != null && canPan(target) && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                             swipeMode = SwipeMode.PAN
                             lastPanX = event.x
                             lastPanY = event.y
@@ -452,6 +507,10 @@ class PlayerActivity : AppCompatActivity() {
                             swipeMode = SwipeMode.SEEK
                             swipeStartPosition = player?.currentPosition ?: 0L
                             swipeTargetPosition = swipeStartPosition
+                            wasPlayingBeforeSeek = player?.isPlaying == true
+                            if (wasPlayingBeforeSeek) {
+                                player?.pause()
+                            }
                         } else if (abs(dy) > touchSlop && abs(dy) > abs(dx) * 1.2f) {
                             val halfWidth = binding.gestureLayer.width / 2f
                             if (downX < halfWidth) {
@@ -473,8 +532,10 @@ class PlayerActivity : AppCompatActivity() {
                                 transY += event.y - lastPanY
                                 lastPanX = event.x
                                 lastPanY = event.y
+                                ensureUnclipped(target)
                                 clampTranslation(target)
                                 applyTransform(target)
+                                updateResetZoomButton()
                             }
                         }
 
@@ -489,8 +550,12 @@ class PlayerActivity : AppCompatActivity() {
                                 val diff = swipeTargetPosition - swipeStartPosition
                                 val diffStr = (if (diff >= 0) "+" else "") + FormatUtils.formatDuration(diff)
                                 showCenterHud(
-                                    "${FormatUtils.formatDuration(swipeTargetPosition)} / ${FormatUtils.formatDuration(dur)}\n$diffStr"
+                                    "${FormatUtils.formatDurationWithMs(swipeTargetPosition)} / ${FormatUtils.formatDuration(dur)}\n$diffStr"
                                 )
+                                binding.tvCurrentTime.text = FormatUtils.formatDuration(swipeTargetPosition)
+                                binding.seekBar.progress = ((swipeTargetPosition * SEEKBAR_MAX) / dur).toInt()
+                                    .coerceIn(0, SEEKBAR_MAX.toInt())
+                                requestScrubSeek(swipeTargetPosition)
                             }
                         }
 
@@ -526,7 +591,12 @@ class PlayerActivity : AppCompatActivity() {
                         binding.tvSpeedBadge.visibility = View.GONE
                     }
                     if (swipeMode == SwipeMode.SEEK) {
-                        player?.seekTo(swipeTargetPosition)
+                        finishScrubSeek(swipeTargetPosition)
+                        if (wasPlayingBeforeSeek) {
+                            wasPlayingBeforeSeek = false
+                            player?.play()
+                        }
+                        updatePlayPauseIcon(player?.isPlaying == true)
                     }
                     swipeMode = SwipeMode.NONE
                 }
@@ -537,9 +607,48 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun getVideoSurface(): View? = binding.playerView.videoSurfaceView
 
+    private fun ensureUnclipped(target: View) {
+        var p: ViewParent? = target.parent
+        while (p is ViewGroup) {
+            if (p.clipChildren) p.clipChildren = false
+            if (p.clipToPadding) p.clipToPadding = false
+            if (p.id == binding.rootContainer.id) break
+            p = p.parent
+        }
+    }
+
+    private fun canPan(target: View): Boolean {
+        if (scaleFactor > 1.02f) return true
+        val pw = binding.playerView.width
+        val ph = binding.playerView.height
+        if (pw <= 0 || ph <= 0) return false
+        return target.width * scaleFactor > pw + 4f ||
+            target.height * scaleFactor > ph + 4f
+    }
+
+    private fun updateResetZoomButton() {
+        val visible = scaleFactor > 1.02f || abs(transX) > 4f || abs(transY) > 4f
+        binding.btnResetZoom.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
     private fun clampTranslation(target: View) {
-        val maxTx = max(0f, (target.width * scaleFactor - binding.playerView.width) / 2f + 120f)
-        val maxTy = max(0f, (target.height * scaleFactor - binding.playerView.height) / 2f + 120f)
+        val viewW = binding.playerView.width.toFloat()
+        val viewH = binding.playerView.height.toFloat()
+        if (viewW <= 0f || viewH <= 0f || target.width <= 0 || target.height <= 0) return
+
+        val scaledW = target.width * scaleFactor
+        val scaledH = target.height * scaleFactor
+
+        val maxTx = when {
+            scaledW > viewW -> (scaledW - viewW) / 2f + 120f
+            scaleFactor > 1.02f -> (viewW - scaledW) / 2f
+            else -> 0f
+        }
+        val maxTy = when {
+            scaledH > viewH -> (scaledH - viewH) / 2f + 120f
+            scaleFactor > 1.02f -> (viewH - scaledH) / 2f
+            else -> 0f
+        }
         transX = transX.coerceIn(-maxTx, maxTx)
         transY = transY.coerceIn(-maxTy, maxTy)
     }
@@ -604,15 +713,39 @@ class PlayerActivity : AppCompatActivity() {
         )
     }
 
+    private fun requestScrubSeek(targetMs: Long) {
+        pendingScrubMs = targetMs
+        if (!isSeekInFlight && targetMs != lastDispatchedScrubMs) {
+            dispatchScrubSeek(targetMs)
+        }
+    }
+
+    private fun dispatchScrubSeek(targetMs: Long) {
+        val p = player ?: return
+        lastDispatchedScrubMs = targetMs
+        isSeekInFlight = true
+        p.seekTo(targetMs)
+        handler.removeCallbacks(scrubTimeoutRunnable)
+        handler.postDelayed(scrubTimeoutRunnable, SCRUB_WATCHDOG_MS)
+    }
+
+    private fun finishScrubSeek(targetMs: Long) {
+        handler.removeCallbacks(scrubTimeoutRunnable)
+        isSeekInFlight = false
+        pendingScrubMs = -1L
+        lastDispatchedScrubMs = -1L
+        player?.seekTo(targetMs)
+    }
+
     private fun updateProgress() {
         val p = player ?: return
-        if (isUserSeeking) return
+        if (isUserSeeking || swipeMode == SwipeMode.SEEK) return
         val dur = p.duration.coerceAtLeast(0L)
         val pos = p.currentPosition.coerceAtLeast(0L)
         binding.tvCurrentTime.text = FormatUtils.formatDuration(pos)
         binding.tvTotalTime.text = FormatUtils.formatDuration(dur)
         if (dur > 0) {
-            binding.seekBar.progress = ((pos * 1000L) / dur).toInt().coerceIn(0, 1000)
+            binding.seekBar.progress = ((pos * SEEKBAR_MAX) / dur).toInt().coerceIn(0, SEEKBAR_MAX.toInt())
         } else {
             binding.seekBar.progress = 0
         }
@@ -730,6 +863,11 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun releasePlayer() {
+        handler.removeCallbacks(scrubTimeoutRunnable)
+        isSeekInFlight = false
+        pendingScrubMs = -1L
+        lastDispatchedScrubMs = -1L
+        wasPlayingBeforeSeek = false
         player?.release()
         player = null
     }

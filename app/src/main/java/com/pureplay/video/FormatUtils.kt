@@ -21,6 +21,21 @@ object FormatUtils {
         }
     }
 
+    fun formatDurationWithMs(ms: Long): String {
+        val absMs = abs(ms)
+        val millis = (absMs % 1000).toInt()
+        val totalSeconds = (absMs / 1000).toInt()
+        val seconds = totalSeconds % 60
+        val minutes = (totalSeconds / 60) % 60
+        val hours = totalSeconds / 3600
+        val sign = if (ms < 0) "-" else ""
+        return if (hours > 0) {
+            String.format(Locale.US, "%s%d:%02d:%02d.%03d", sign, hours, minutes, seconds, millis)
+        } else {
+            String.format(Locale.US, "%s%02d:%02d.%03d", sign, minutes, seconds, millis)
+        }
+    }
+
     fun formatSize(bytes: Long): String {
         if (bytes <= 0) return ""
         val kb = bytes / 1024.0

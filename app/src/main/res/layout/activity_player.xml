@@ -220,7 +220,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginHorizontal="8dp"
                     android:layout_weight="1"
-                    android:max="1000"
+                    android:max="10000"
                     android:progressTint="@color/accent"
                     android:thumbTint="@color/accent" />
 
